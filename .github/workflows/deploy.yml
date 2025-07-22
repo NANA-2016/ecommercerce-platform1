@@ -5,15 +5,15 @@ on:
     branches: [main]
 
 jobs:
-  app:
-    name: App (Backend) - Build, Push, Deploy
+  backend:
+    name: Build, Push App Image and Deploy to ECS
     runs-on: ubuntu-latest
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: eu-north-1
+      AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-      ECR_REPOSITORY_APP: ${{ secrets.ECR_REPOSITORY_BACKEND }}
+      ECR_REPOSITORY_APP: ${{ secrets.ECR_REPOSITORY_APP }}
 
     steps:
       - name: Checkout code
@@ -32,16 +32,24 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-north-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
           | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      - name: Build app Docker image
+      - name: Build app Docker image with cache
         run: |
-          docker build -t app ./app
+          docker build \
+            --cache-from type=local,src=/tmp/.buildx-cache-app \
+            --cache-to type=local,dest=/tmp/.buildx-cache-app-new,mode=max \
+            -t app ./app
+
+      - name: Move app build cache
+        run: |
+          rm -rf /tmp/.buildx-cache-app
+          mv /tmp/.buildx-cache-app-new /tmp/.buildx-cache-app
 
       - name: Tag and push app image
         run: |
@@ -51,17 +59,17 @@ jobs:
 
       - name: Deploy app to ECS
         run: |
-          CLUSTER_NAME="your-app-cluster"
-          SERVICE_NAME="your-app-service"
+          CLUSTER_NAME="your-backend-cluster"
+          SERVICE_NAME="your-backend-service"
           aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment --region $AWS_REGION
 
   frontend:
-    name: Frontend - Build, Push, Deploy
+    name: Build, Push Frontend Image and Deploy to ECS
     runs-on: ubuntu-latest
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: eu-north-1
+      AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       ECR_REPOSITORY_FRONTEND: ${{ secrets.ECR_REPOSITORY_FRONTEND }}
 
@@ -82,16 +90,24 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-north-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
           | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      - name: Build frontend Docker image
+      - name: Build frontend Docker image with cache
         run: |
-          docker build -t frontend ./webapp
+          docker build \
+            --cache-from type=local,src=/tmp/.buildx-cache-frontend \
+            --cache-to type=local,dest=/tmp/.buildx-cache-frontend-new,mode=max \
+            -t frontend ./webapp
+
+      - name: Move frontend build cache
+        run: |
+          rm -rf /tmp/.buildx-cache-frontend
+          mv /tmp/.buildx-cache-frontend-new /tmp/.buildx-cache-frontend
 
       - name: Tag and push frontend image
         run: |
